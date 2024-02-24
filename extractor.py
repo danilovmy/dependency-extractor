@@ -34,7 +34,7 @@ def base_init(*routes):
             for parent in parents(module):
                 initiate(parent)
 
-def check_legacy(module, error):
+def check_legacy(module):
     legacy = SOURCES / module.split('.')[0]
     if legacy.exists():
         legacy = SOURCES / module.replace('.', '/')
@@ -57,7 +57,7 @@ def check_legacy(module, error):
 
 
 
-def check_requirements(module, error):
+def check_requirements(module):
     sys.modules[module] = Mock()
     requirements = REQUIREMENTS / 'requirements.txt'
     if not requirements.exists():
@@ -75,6 +75,7 @@ def check_requirements(module, error):
 def module_loader(module):
     success = False
     counter = 0
+
     while not success:
         try:
             importlib.import_module('.'.join(module.parts))
@@ -103,7 +104,6 @@ if __name__ == '__main__':
     base_init(SOURCES, IMPORTS, REQUIREMENTS, MODULES)
     print('legacy stats', len([file for file in SOURCES.rglob('*.py')]))
 
-    counter = 0
     for module in MODULES.rglob('*.py'):
         module_loader(module)
 

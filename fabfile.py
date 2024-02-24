@@ -3,7 +3,7 @@ import time
 
 from fabric import task
 import io
-from contextlib import redirect_stderr, redirect_stdout
+from contextlib import redirect_stderr
 
 
 @task
@@ -12,7 +12,7 @@ def strip_hints(context):
     print(start)
     errors = []
     SOURCES = Path('legacy_strip_hints/')
-    STRIPPER = Path('strip_hints/bin/strip_hints.py')
+    STRIPPER = Path('src_strip_hints/bin/strip_hints.py')
 
     for index, file_for_strip_tags in enumerate(SOURCES.rglob('*.py')):
         if (index % 50) == 0:
