@@ -8,11 +8,12 @@ from contextlib import redirect_stderr
 
 @task
 def strip_hints(context):
+    return
     start = time.time()
     print(start)
     errors = []
     SOURCES = Path('legacy_strip_hints/')
-    STRIPPER = Path('src_strip_hints/bin/strip_hints.py')
+    STRIPPER = Path('strip_hints/bin/strip_hints.py')
 
     for index, file_for_strip_tags in enumerate(SOURCES.rglob('*.py')):
         if (index % 50) == 0:
