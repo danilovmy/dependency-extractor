@@ -42,7 +42,7 @@ def remove_unused_imports(context):
 
         err_catcher = io.StringIO()
         with redirect_stderr(err_catcher):
-            context.run(f'autoflake --remove-all-unused-imports --in-place -v {file_for_strip_tags.absolute()}')
+            context.run(f'autoflake --remove-all-unused-imports --in-place -v {file_for_strip_tags.absolute()}', standard_out = None, standard_error = None)
         err_output = err_catcher.getvalue()
         if err_output:
             print('error', err_output, file_for_strip_tags)
