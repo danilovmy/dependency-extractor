@@ -39,36 +39,45 @@ def check_requirements(module, collector):
 
 
 def extract_imports(filepath):
-    for node in ast.walk(ast.parse(filepath.read_text(), filename=filepath.name)):
+    for node in ast.walk(ast.parse(filepath.read_text(), filepath.name)):
         if isinstance(node, (ast.Import, ast.ImportFrom)):
-            yield type(node).__name__, node
+            absolute_path = ''
+            if getattr(node, 'level', None):
+                absolute_path = '.'.join(filepath.absolute().relative_to(SOURCES.absolute()).parts[0:- node.level])
+            yield type(node).__name__, node, absolute_path
 
 def ast_module_loader(module, collector):
 
     imports = collector['imported'][str(module)] = collector['imported'].get(str(module)) or {'classes': {}, 'modules': Counter()}
 
-    for node_cls, node in extract_imports(module):
+    for node_cls, node, absolute_path in extract_imports(module):
         if node_cls == 'ImportFrom':
-            if node.lineno == 5:
-                ...
-            collector['imports'].update([node.module])
-            imports['modules'].update([node.module])
-            if f'{node.module}'.startswith('importlib'):
+            node_module = node.module
+            if absolute_path:
+                node_module = '.'.join((absolute_path, node_module))
+
+            imports['modules'].update([node_module])
+            if f'{node_module}'.startswith('importlib'):
                 print('importlib detected', module)
             for name in node.names:
-                imports['classes'][name.asname if name.asname else name.name] = node.module
-                if collector['imports'][node.module] == 1:
-                    check_legacy(f'{node.module}.{name.name}', collector)
+                imports['classes'][name.asname if name.asname else name.name] = node_module
+                new_module = f'{node_module}.{name.name}'
+                collector['imports'].update([new_module])
+                if collector['imports'][new_module] == 1:
+                    check_legacy(new_module, collector)
 
         elif node_cls == 'Import':
             for name in node.names:
-                if f'{name}'.startswith('importlib'):
+                node_name = name.name
+                if absolute_path:
+                    node_name = '.'.join((absolute_path, node_name))
+                if f'{node_name}'.startswith('importlib'):
                     print('importlib detected', module)
-                collector['imports'].update([name.name])
-                imports['modules'].update([name.name])
-                imports['classes'][name.asname if name.asname else name.name] = name.name
-                if collector['imports'][name.name] == 1:
-                    check_legacy(f'{name.name}', collector)
+                collector['imports'].update([node_name])
+                imports['modules'].update([node_name])
+                imports['classes'][name.asname if name.asname else name.name] = node_name
+                if collector['imports'][node_name] == 1:
+                    check_legacy(f'{node_name}', collector)
 
 def extract_all_imports(paths=None):
     base_init(RESULTS)
@@ -86,8 +95,8 @@ def extract_all_imports(paths=None):
 
     report = RESULTS / 'ast_imports_report.txt'
     with report.open(mode='w', encoding='utf-8') as destination:
-        for counter, name in collector['imports'].most_common():
-            destination.writelines([f'{counter} {name}\n'])
+        for name, count in collector['imports'].most_common():
+            destination.writelines([f'{count} {name}\n'])
 
     report = RESULTS / 'ast_classes_report.txt'
     with report.open(mode='w', encoding='utf-8') as destination:
