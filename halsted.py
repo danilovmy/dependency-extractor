@@ -30,8 +30,6 @@ class HalsteadVisitor(ast.NodeVisitor):
         self.operators_counter.update(args)
 
     def add_operand(self, *args):
-        if 'SLOC' in f'{(*args,)}':
-            pass
         self.operands_counter.update(args)
 
     # utilities for operators
@@ -82,7 +80,7 @@ class HalsteadVisitor(ast.NodeVisitor):
 
     def visit_Constant(self, node: ast.Constant):
         # Constants are operands; docstrings are skipped at parent level
-        self.add_operand(repr(node.value))
+        self.add_operand(f'{node.value}')
 
     def visit_arg(self, node: ast.arg):
         # Parameter name counts as operand
@@ -225,6 +223,17 @@ class HalsteadVisitor(ast.NodeVisitor):
         self.visit(node.target)
         self.visit(node.value)
 
+    def visit_JoinedStr(self, node):
+        values = [*node.values]
+        for idx, value in enumerate(values):
+            if isinstance(value, ast.Constant):
+                values[idx] = f'{value.value}'
+            else:
+                self.visit(value)
+                values[idx] = '{}'
+        self.add_op('f')
+        self.add_operand(''.join(values))
+
     def visit_Call(self, node: ast.Call):
         self.add_op('call')
         self.visit(node.func)
@@ -238,7 +247,8 @@ class HalsteadVisitor(ast.NodeVisitor):
 
     def visit_Attribute(self, node: ast.Attribute):
         self.add_op('.')
-        self.add_operand(*ast.unparse(node).split('.'))
+        self.add_operand(node.attr)
+        self.visit(node.value)
 
     def visit_Subscript(self, node: ast.Subscript):
         self.add_op('[]')
