@@ -5,8 +5,8 @@ class HalsteadVisitor(ast.NodeVisitor):
     def __init__(self, node, exclude_docstrings = True):
         self.reflection = node
         self.exclude_docstrings = exclude_docstrings
-        self.op_counter: Counter[str] = Counter()
-        self.operand_counter: Counter[str] = Counter()
+        self.operators_counter: Counter[str] = Counter()
+        self.operands_counter: Counter[str] = Counter()
 
     @property
     def halstead(self):
@@ -14,9 +14,9 @@ class HalsteadVisitor(ast.NodeVisitor):
         if not cache:
             self.visit(self.reflection)
             # derive metrics from counters
-            operators = list(self.op_counter)
-            operands = list(self.operand_counter)
-            cache = self._cache = { 'operands': operands, 'operators': operators, 'n1': len(operands), 'n2': len(operators), 'N1': sum(self.op_counter.values()), 'N2': sum(self.operand_counter.values())}
+            operators = list(self.operators_counter)
+            operands = list(self.operands_counter)
+            cache = self._cache = { 'operands': operands, 'operators': operators, 'n1': len(operators), 'n2': len(operands), 'N1': sum(self.operators_counter.values()), 'N2': sum(self.operands_counter.values())}
             n1, n2, N1, N2 = cache['n1'], cache['n2'], cache['N1'], cache['N2']
             n, N = n1 + n2, N1 + N2
             volume = N * math.log2(n or 1)
@@ -27,10 +27,12 @@ class HalsteadVisitor(ast.NodeVisitor):
 
     # helpers
     def add_op(self, *args):
-        self.op_counter.update(args)
+        self.operators_counter.update(args)
 
     def add_operand(self, *args):
-        self.operand_counter.update(args)
+        if 'SLOC' in f'{(*args,)}':
+            pass
+        self.operands_counter.update(args)
 
     # utilities for operators
     @staticmethod
@@ -57,9 +59,9 @@ class HalsteadVisitor(ast.NodeVisitor):
             ast.Is: 'is', ast.IsNot: 'is not', ast.In: 'in', ast.NotIn: 'not in'
         }.get(type(op), type(op).__name__)
 
-    @staticmethod
-    def _aug_symbol(op):
-        base = ASTObject._HalsteadVisitor._binop_symbol(op)
+    @classmethod
+    def _aug_symbol(cls, op):
+        base = cls._binop_symbol(op)
         # map back from '+' etc to '+=' style where possible
         mapping = {
             '+': '+=', '-': '-=', '*': '*=', '@': '@=', '/': '/=', '//': '//=', '%': '%=', '**': '**=',
@@ -190,8 +192,11 @@ class HalsteadVisitor(ast.NodeVisitor):
             self.visit(comp)
 
     def visit_UnaryOp(self, node: ast.UnaryOp):
-        self.add_op(self._unary_symbol(node.op))
-        self.visit(node.operand)
+        if isinstance(node.op, (ast.USub, ast.UAdd)) and isinstance(node.operand, ast.Constant):
+            self.add_operand(ast.unparse(node))
+        else:
+            self.add_op(self._unary_symbol(node.op))
+            self.visit(node.operand)
 
     def visit_AugAssign(self, node: ast.AugAssign):
         self.add_op(self._aug_symbol(node.op))
@@ -233,8 +238,7 @@ class HalsteadVisitor(ast.NodeVisitor):
 
     def visit_Attribute(self, node: ast.Attribute):
         self.add_op('.')
-        self.add_operand(node.attr)
-        self.visit(node.value)
+        self.add_operand(*ast.unparse(node).split('.'))
 
     def visit_Subscript(self, node: ast.Subscript):
         self.add_op('[]')
