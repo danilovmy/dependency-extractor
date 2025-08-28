@@ -1,6 +1,25 @@
 import math
 from collections import Counter
 import ast
+
+transformer = {
+    'ast.Add': '+', 'ast.Sub': '-', 'ast.Mult': '*', 'ast.MatMult': '@',
+    'ast.Div': '/', 'ast.FloorDiv': '//', 'ast.Mod': '%', 'ast.Pow': '**',
+
+    'ast.BitAnd': '&', 'ast.BitOr': '|', 'ast.BitXor': '^',
+    'ast.LShift': '<<', 'ast.RShift': '>>',
+
+    'ast.UAdd': 'u+', 'ast.USub': 'u-', 'ast.Not': 'not', 'ast.Invert': '~',
+
+    'ast.Eq': '==', 'ast.NotEq': '!=', 'ast.Lt': '<', 'ast.LtE': '<=', 'ast.Gt': '>', 'ast.GtE': '>=',
+    'ast.Is': 'is', 'ast.IsNot': 'is not', 'ast.In': 'in', 'ast.NotIn': 'not in',
+
+    'ast.AugAssign.Add': '+=', 'ast.AugAssign.Sub': '-=', 'ast.AugAssign.Mult': '*=', 'ast.AugAssign.MatMult': '@=',
+    'ast.AugAssign.Div': '/=', 'ast.AugAssign.FloorDiv': '//=', 'ast.AugAssign.Mod': '%=', 'ast.AugAssign.Pow': '**=',
+    'ast.AugAssign.BitAnd': '&=', 'ast.AugAssign.BitOr': '|=', 'ast.AugAssign.BitXor': '^=',
+    'ast.AugAssign.LShift': '<<=', 'ast.AugAssign.RShift': '>>=',
+}
+
 class HalsteadVisitor(ast.NodeVisitor):
     def __init__(self, node, exclude_docstrings = True):
         self.reflection = node
@@ -31,41 +50,6 @@ class HalsteadVisitor(ast.NodeVisitor):
 
     def add_operand(self, *args):
         self.operands_counter.update(args)
-
-    # utilities for operators
-    @staticmethod
-    def _binop_symbol(op):
-        return {
-            ast.Add: '+', ast.Sub: '-', ast.Mult: '*', ast.MatMult: '@',
-            ast.Div: '/', ast.FloorDiv: '//', ast.Mod: '%', ast.Pow: '**',
-            ast.BitAnd: '&', ast.BitOr: '|', ast.BitXor: '^',
-            ast.LShift: '<<', ast.RShift: '>>',
-        }.get(type(op), type(op).__name__)
-
-    @staticmethod
-    def _unary_symbol(op):
-        return {ast.UAdd: 'u+', ast.USub: 'u-', ast.Not: 'not', ast.Invert: '~'}.get(type(op), type(op).__name__)
-
-    @staticmethod
-    def _boolop_symbol(op):
-        return {ast.And: 'and', ast.Or: 'or'}.get(type(op), type(op).__name__)
-
-    @staticmethod
-    def _cmpop_symbol(op):
-        return {
-            ast.Eq: '==', ast.NotEq: '!=', ast.Lt: '<', ast.LtE: '<=', ast.Gt: '>', ast.GtE: '>=',
-            ast.Is: 'is', ast.IsNot: 'is not', ast.In: 'in', ast.NotIn: 'not in'
-        }.get(type(op), type(op).__name__)
-
-    @classmethod
-    def _aug_symbol(cls, op):
-        base = cls._binop_symbol(op)
-        # map back from '+' etc to '+=' style where possible
-        mapping = {
-            '+': '+=', '-': '-=', '*': '*=', '@': '@=', '/': '/=', '//': '//=', '%': '%=', '**': '**=',
-            '&': '&=', '|': '|=', '^': '^=', '<<': '<<=', '>>': '>>='
-        }
-        return mapping.get(base, f'aug_{base}')
 
     def _visit_body_skipping_docstring(self, body):
         if not isinstance(body, list):
@@ -139,14 +123,13 @@ class HalsteadVisitor(ast.NodeVisitor):
 
     # Imports
     def _count_dotted_name(self, dotted: str):
-        if not dotted:
-            return
-        parts = dotted.split('.')
-        for i, part in enumerate(parts):
-            if part:
-                self.add_operand(part)
-            if i < len(parts) - 1:
-                self.add_op('.')
+        if dotted:
+            parts = dotted.split('.')
+            for i, part in enumerate(parts):
+                if part:
+                    self.add_operand(part)
+                if i < len(parts) - 1:
+                    self.add_op('.')
 
     def visit_Import(self, node: ast.Import):
         self.add_op('import')
@@ -193,11 +176,11 @@ class HalsteadVisitor(ast.NodeVisitor):
         if isinstance(node.op, (ast.USub, ast.UAdd)) and isinstance(node.operand, ast.Constant):
             self.add_operand(ast.unparse(node))
         else:
-            self.add_op(self._unary_symbol(node.op))
+            self.add_op(f'ast.{type(node.op).__name__}')
             self.visit(node.operand)
 
     def visit_AugAssign(self, node: ast.AugAssign):
-        self.add_op(f'ast.{type(node).__name__}')
+        self.add_op(f'ast.{type(node).__name__}.{type(node.op).__name__}')
         self.visit(node.target)
         self.visit(node.value)
 
