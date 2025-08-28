@@ -150,11 +150,14 @@ class ASTObject:
     SLOC = source_weight  # The number of source lines of code
 
     @property
+    def _lines(self):
+        raw = ast.unparse(self.reflection).splitlines()
+        return [line for line in raw if line.strip()]
+
+    @property
     def logical_weight(self):
         """ The number of Logical Lines Of Code (LLOC) """
-        raw = ast.unparse(self.reflection).splitlines()
-        code = [line for line in raw if line.strip()]
-        return len(code)
+        return len(self._lines)
     LLOC = logical_weight # The number of logical lines of code
 
     # Halstead metrics implementation

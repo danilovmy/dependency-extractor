@@ -171,7 +171,7 @@ class HalsteadVisitor(ast.NodeVisitor):
 
     # Expressions and operators
     def visit_BinOp(self, node: ast.BinOp):
-        self.add_op(self._binop_symbol(node.op))
+        self.add_op(f'ast.{type(node.op).__name__}')
         self.visit(node.left)
         self.visit(node.right)
 
@@ -186,7 +186,7 @@ class HalsteadVisitor(ast.NodeVisitor):
     def visit_Compare(self, node: ast.Compare):
         self.visit(node.left)
         for op, comp in zip(node.ops, node.comparators):
-            self.add_op(self._cmpop_symbol(op))
+            self.add_op(f'ast.{type(op).__name__}')
             self.visit(comp)
 
     def visit_UnaryOp(self, node: ast.UnaryOp):
@@ -197,7 +197,7 @@ class HalsteadVisitor(ast.NodeVisitor):
             self.visit(node.operand)
 
     def visit_AugAssign(self, node: ast.AugAssign):
-        self.add_op(self._aug_symbol(node.op))
+        self.add_op(f'ast.{type(node).__name__}')
         self.visit(node.target)
         self.visit(node.value)
 
