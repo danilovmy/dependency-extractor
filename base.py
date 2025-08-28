@@ -2,11 +2,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 import ast
 
+from halsted import HalsteadVisitor
+
 
 @dataclass
 class ASTObject:
     """ Base wrapper for AST Node for complexity measurements"""
-    2
     PIPELINE = 'collect_modules', 'collect_imports', 'collect_classes', 'collect_functions', 'collect_constants', 'collect_values'
 
     name: str
@@ -156,6 +157,29 @@ class ASTObject:
         return len(code)
     LLOC = logical_weight # The number of logical lines of code
 
+    # Halstead metrics implementation
+    @property
+    def _n1(self):
+        return self.halstead['n1']
+
+    @property
+    def _n2(self):
+        return self.halstead['n2']
+
+    @property
+    def _N1(self):
+        return self.halstead['N1']
+
+    @property
+    def _N2(self):
+        return self.halstead['N2']
+
+    @property
+    def halstead(self):
+        cache = getattr(self, '_cache', None)
+        if not cache:
+            cache = HalsteadVisitor(self.reflection, exclude_docstrings=True, )
+        return cache.halstead
 
     def get_path(self):
         return self.path or self.parent.get_path()
@@ -247,4 +271,7 @@ if __name__ == '__main__':
             child = cls.children[0]
             print(child.is_docstring)
 
+    root = init(path)
+    print(root._n1, root._n2, root._N1, root._N2)
+    print(root.halstead)
 
