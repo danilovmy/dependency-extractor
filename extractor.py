@@ -155,7 +155,7 @@ def module_loader(module):
 if __name__ == '__main__':
     sys.path.insert(0, str(FAKE.absolute()))
 
-    base_init(MODULES, FAKE, IMPORTS, REQUIREMENTS, MODULES)
+    base_init(MODULES, FAKE, IMPORTS, REQUIREMENTS)
     print('legacy stats', len([file for file in SOURCES.rglob('*.py')]))
 
     for module in MODULES.rglob('*.py'):

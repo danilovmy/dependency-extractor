@@ -11,10 +11,11 @@ import os
 
 
 def perform_extraction(paths=None):
+
     collected_deps, collected_hints, refactor_goals = extract_and_hint(paths)
 
     destination = RESULTS / 'extracted'
-
+    breakpoint()
     for filename in collected_deps['imported'].keys():
         source = Path(filename)
         destination = RESULTS / 'extracted' / source.absolute().relative_to(SOURCES.absolute())

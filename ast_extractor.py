@@ -55,7 +55,6 @@ def ast_module_loader(module, collector):
             node_module = node.module
             if absolute_path:
                 node_module = '.'.join((absolute_path, node_module))
-
             imports['modules'].update([node_module])
             if f'{node_module}'.startswith('importlib'):
                 print('importlib detected', module)
@@ -65,7 +64,6 @@ def ast_module_loader(module, collector):
                 collector['imports'].update([new_module])
                 if collector['imports'][new_module] == 1:
                     check_legacy(new_module, collector)
-
         elif node_cls == 'Import':
             for name in node.names:
                 node_name = name.name
@@ -78,17 +76,15 @@ def ast_module_loader(module, collector):
                 imports['classes'][name.asname if name.asname else name.name] = node_name
                 if collector['imports'][node_name] == 1:
                     check_legacy(f'{node_name}', collector)
-
 def extract_all_imports(paths=None):
     base_init(RESULTS)
     paths = paths or [SOURCES]
     base_init(*paths)
-
     collector = {
-        'imported': {}, # {'filename': {'classes': dict(), 'modules': Counter()}
         'imports': Counter(),
-        'requirements': Counter()
-    }
+        'requirements': Counter(),
+        'imported': {} } # {'filename': {'classes': dict(), 'modules': Counter()}
+
 
     for module in (filename for path in paths for filename in ([path] if path.is_file() else path.rglob('*.py'))):
         ast_module_loader(module, collector)
