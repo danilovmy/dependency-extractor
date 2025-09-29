@@ -1,8 +1,7 @@
 import math
 from collections import Counter
-from dataclasses import dataclass, field
 import ast
-from stats import ASTObject as baseASTObject
+from base import ASTObject
 from pathlib import Path
 
 transformer = {
@@ -25,52 +24,45 @@ transformer = {
     'ast.AugAssign.LShift': '<<=', 'ast.AugAssign.RShift': '>>=',
 }
 
-@dataclass
-class ASTObject(baseASTObject):
-    exclude_docstring: bool = True # skip docstring from complexity or not
-    operators: Counter[str] = field(default_factory=Counter)  # imported
-    operands: Counter[str] = field(default_factory=Counter)
+class HalsteadVisitor(ast.NodeVisitor):
+    def __init__(self, node, exclude_docstrings = True):
+        self.reflection = node
+        self.exclude_docstrings = exclude_docstrings
+        self.operators_counter: Counter[str] = Counter()
+        self.operands_counter: Counter[str] = Counter()
 
     @property
     def halstead(self):
-        if not getattr(self, '_halstead', None):
+        cache = getattr(self, '_cache', None)
+        if not cache:
+            self.visit(self.reflection)
             # derive metrics from counters
-            # for operator in list(self.operators_counter):
-            #     if operator in transformer:
-            #         self.operators_counter[transformer[operator]] = self.operators_counter.pop(operator)
-
-            for halstead in [children.halstead for children in self.children]:
-                self.operands.update(halstead['operands'])
-                self.operators.update(halstead['operators'])
+            for operator in list(self.operators_counter):
+                if operator in transformer:
+                    self.operators_counter[transformer[operator]] = self.operators_counter.pop(operator)
 
 
-            halstead = self._halstead = { 'operands': self.operands, 'operators': self.operators, 'n1': len(self.operators), 'n2': len(self.operands), 'N1': sum(self.operators.values()), 'N2': sum(self.operands.values())}
-
-            n1, n2, N1, N2 = halstead['n1'], halstead['n2'], halstead['N1'], halstead['N2']
+            cache = self._cache = { 'operands': self.operands_counter, 'operators': self.operators_counter, 'n1': len(self.operators_counter), 'n2': len(self.operands_counter.keys()), 'N1': sum(self.operators_counter.values()), 'N2': sum(self.operands_counter.values())}
+            n1, n2, N1, N2 = cache['n1'], cache['n2'], cache['N1'], cache['N2']
             n, N = n1 + n2, N1 + N2
             volume = N * math.log2(n or 1)
             difficulty = n and ((n1 / 2.0) * (N2 / n2)) or 0
             effort = difficulty * volume
-            halstead.update(vocabulary = n, length = N, volume = volume, difficulty = difficulty, effort = effort)
-        return self._halstead
+            cache.update(vocabulary = n, length = N, volume = volume, difficulty = difficulty, effort = effort)
+        return cache
 
-    def visit(self, node):
-        """Visit a node."""
-        method = 'visit_' + node.__class__.__name__
-        if hasattr(self, method):
-            return getattr(self, method)(node)
-
-    def collect(self, node):
-        collected = super().collect(node)
-        if not collected.is_docstring:
-            self.visit(node)
-        return collected
     # helpers
     def add_op(self, *args):
-        self.operators.update(args)
+        self.operators_counter.update(args)
 
     def add_operand(self, *args):
-        self.operands.update(args)
+        self.operands_counter.update(args)
+
+    def _visit_body_skipping_docstring(self, body):
+        if isinstance(body, list):
+            start = 1 if (self.exclude_docstrings and body and isinstance(body[0], ast.Expr) and isinstance(getattr(body[0], 'value', None), ast.Constant) and isinstance(body[0].value.value, str)) else 0
+            for stmt in body[start:]:
+                self.visit(stmt)
 
     # Operand visitors
     def visit_Name(self, node: ast.Name):
@@ -86,20 +78,30 @@ class ASTObject(baseASTObject):
             self.add_operand(node.arg)
         # also visit annotation to capture identifiers/constants used in types
         if node.annotation:
-            # loop by list of annotations
             self.visit(node.annotation)
 
     # Structural and definition nodes
-    def visit_decorators(self, node):
-        if hasattr(node, 'decorator_list'):
-            for _decorator in node.decorator_list:
-                 self.add_op('@')
-
-
     def visit_FunctionDef(self, node: ast.FunctionDef):
         self.add_op('def')
-        self.visit_decorators(node)
         # parameters
+        for a in list(node.args.posonlyargs) + list(node.args.args) + list(node.args.kwonlyargs):
+            self.visit(a)
+        if node.args.vararg:
+            self.visit(node.args.vararg)
+        if node.args.kwarg:
+            self.visit(node.args.kwarg)
+        # defaults and annotations
+        for d in list(getattr(node.args, 'defaults', [])) + list(getattr(node.args, 'kw_defaults', [])):
+            if d is not None:
+                self.visit(d)
+        for dec in node.decorator_list:
+            self.add_op('@')
+            self.visit(dec)
+        for b in node.returns,:
+            if b:
+                self.visit(b)
+        # skip docstring
+        self._visit_body_skipping_docstring(node.body)
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef):
         self.add_op('async')
@@ -108,11 +110,25 @@ class ASTObject(baseASTObject):
     def visit_ClassDef(self, node: ast.ClassDef):
         self.add_op('class')
         self.add_operand(node.name)
-        self.visit_decorators(node)
-
+        for b in node.bases:
+            self.visit(b)
+        for kw in node.keywords:
+            self.visit(kw)
+        for dec in node.decorator_list:
+            self.add_op('@')
+            self.visit(dec)
+        self._visit_body_skipping_docstring(node.body)
 
     def visit_Lambda(self, node: ast.Lambda):
         self.add_op('lambda')
+        # parameters
+        for a in list(node.args.posonlyargs) + list(node.args.args) + list(node.args.kwonlyargs):
+            self.visit(a)
+        if node.args.vararg:
+            self.visit(node.args.vararg)
+        if node.args.kwarg:
+            self.visit(node.args.kwarg)
+        self.visit(node.body)
 
     # Imports
     def _count_dotted_name(self, dotted: str):
@@ -148,6 +164,8 @@ class ASTObject(baseASTObject):
     # Expressions and operators
     def visit_BinOp(self, node: ast.BinOp):
         self.add_op(f'ast.{type(node.op).__name__}')
+        self.visit(node.left)
+        self.visit(node.right)
 
     def visit_BoolOp(self, node: ast.BoolOp):
         sym = f'ast.{type(node.op).__name__}'
@@ -155,74 +173,114 @@ class ASTObject(baseASTObject):
         for i, v in enumerate(node.values):
             if i > 0:
                 self.add_op(sym)
+            self.visit(v)
 
     def visit_Compare(self, node: ast.Compare):
-        for op in node.ops:
+        self.visit(node.left)
+        for op, comp in zip(node.ops, node.comparators):
             self.add_op(f'ast.{type(op).__name__}')
+            self.visit(comp)
 
     def visit_UnaryOp(self, node: ast.UnaryOp):
         if isinstance(node.op, (ast.USub, ast.UAdd)) and isinstance(node.operand, ast.Constant):
             self.add_operand(ast.unparse(node))
         else:
             self.add_op(f'ast.{type(node.op).__name__}')
+            self.visit(node.operand)
 
     def visit_AugAssign(self, node: ast.AugAssign):
         self.add_op(f'ast.{type(node).__name__}.{type(node.op).__name__}')
+        self.visit(node.target)
+        self.visit(node.value)
 
     def visit_Assign(self, node: ast.Assign):
-        for _op in node.targets:
+        # '=' once per target in chain assignment
+        self.add_op('=')
+        for _ in node.targets[1:]:
             self.add_op('=')
+        for t in node.targets:
+            self.visit(t)
+        self.visit(node.value)
 
     def visit_AnnAssign(self, node: ast.AnnAssign):
         # count '=' if there is an assigned value
-        if node.value:
+        if node.value is not None:
             self.add_op('=')
+            self.visit(node.value)
+        self.visit(node.annotation)
+        self.visit(node.target)
 
     def visit_NamedExpr(self, node: ast.NamedExpr):
         self.add_op(':=')
+        self.visit(node.target)
+        self.visit(node.value)
 
     def visit_JoinedStr(self, node):
         values = [*node.values]
-
         for idx, value in enumerate(values):
-            values[idx] = '{}'
             if isinstance(value, ast.Constant):
                 values[idx] = f'{value.value}'
-
+            else:
+                self.visit(value)
+                values[idx] = '{}'
         self.add_op('f')
         self.add_operand(''.join(values))
 
     def visit_Call(self, node: ast.Call):
         self.add_op('call')
+        self.visit(node.func)
+        for a in node.args:
+            self.visit(a)
         for kw in node.keywords:
-            if kw.arg:
+            if kw.arg is not None:
                 self.add_operand(kw.arg)  # count keyword name as operand
+            if kw.value is not None:
+                self.visit(kw.value)
 
     def visit_Attribute(self, node: ast.Attribute):
         self.add_op('.')
         self.add_operand(node.attr)
+        self.visit(node.value)
 
     def visit_Subscript(self, node: ast.Subscript):
         self.add_op('[]')
+        self.visit(node.value)
+        self.visit(node.slice)
 
     def visit_Slice(self, node: ast.Slice):
-        self.add_op('ast.Slice')
+        if node.lower:
+            self.visit(node.lower)
+        if node.upper:
+            self.visit(node.upper)
+        if node.step:
+            self.visit(node.step)
 
     def visit_Index(self, node):  # for older Python; kept for completeness
-        pass
+        self.visit(node.value)
 
     def visit_ExtSlice(self, node: ast.ExtSlice):
-        self.add_op('...')
+        for d in node.dims:
+            self.visit(d)
 
     # Control flow and keywords
     def visit_If(self, node: ast.If):
         self.add_op('if')
+        self.visit(node.test)
+        self._visit_body_skipping_docstring(node.body)
+        self._visit_body_skipping_docstring(node.orelse)
 
     def visit_IfExp(self, node: ast.IfExp):
         self.add_op('if')
+        self.visit(node.test)
+        self.visit(node.body)
+        self.visit(node.orelse)
 
     def visit_For(self, node: ast.For):
         self.add_op('for')
+        self.visit(node.target)
+        self.visit(node.iter)
+        self._visit_body_skipping_docstring(node.body)
+        self._visit_body_skipping_docstring(node.orelse)
 
     def visit_AsyncFor(self, node: ast.AsyncFor):
         self.add_op('async')
@@ -230,38 +288,67 @@ class ASTObject(baseASTObject):
 
     def visit_While(self, node: ast.While):
         self.add_op('while')
+        self.visit(node.test)
+        self._visit_body_skipping_docstring(node.body)
+        self._visit_body_skipping_docstring(node.orelse)
 
     def visit_With(self, node: ast.With):
         self.add_op('with')
+        for item in node.items:
+            self.visit(item)
+        self._visit_body_skipping_docstring(node.body)
 
     def visit_AsyncWith(self, node: ast.AsyncWith):
         self.add_op('async')
         self.visit_With(node)
 
     def visit_withitem(self, node: ast.withitem):
-        pass
+        self.visit(node.context_expr)
+        if node.optional_vars:
+            self.visit(node.optional_vars)
 
     def visit_Try(self, node: ast.Try):
         self.add_op('try')
+        self._visit_body_skipping_docstring(node.body)
+        for h in node.handlers:
+            self.visit(h)
+        self._visit_body_skipping_docstring(node.orelse)
         if node.finalbody:
             self.add_op('finally')
+            self._visit_body_skipping_docstring(node.finalbody)
 
     def visit_ExceptHandler(self, node: ast.ExceptHandler):
         self.add_op('except')
-        if node.name and isinstance(node.name, str):
-            self.add_operand(node.name)
+        if node.type:
+            self.visit(node.type)
+        if node.name:
+            # name can be str in older versions; treat as operand
+            if isinstance(node.name, str):
+                self.add_operand(node.name)
+            else:
+                self.visit(node.name)
+        self._visit_body_skipping_docstring(node.body)
 
     def visit_Return(self, node: ast.Return):
         self.add_op('return')
+        if node.value:
+            self.visit(node.value)
 
     def visit_Raise(self, node: ast.Raise):
         self.add_op('raise')
+        if node.exc:
+            self.visit(node.exc)
+        if node.cause:
+            self.visit(node.cause)
 
     def visit_Yield(self, node: ast.Yield):
         self.add_op('yield')
+        if node.value:
+            self.visit(node.value)
 
     def visit_YieldFrom(self, node: ast.YieldFrom):
         self.add_op('yield from')
+        self.visit(node.value)
 
     def visit_Break(self, node: ast.Break):
         self.add_op('break')
@@ -274,12 +361,18 @@ class ASTObject(baseASTObject):
 
     def visit_Assert(self, node: ast.Assert):
         self.add_op('assert')
+        self.visit(node.test)
+        if node.msg:
+            self.visit(node.msg)
 
     def visit_Await(self, node: ast.Await):
         self.add_op('await')
+        self.visit(node.value)
 
     def visit_Global(self, node: ast.Global):
         self.add_op('global')
+        for n in node.names:
+            self.add_operand(n)
 
     def visit_Nonlocal(self, node: ast.Nonlocal):
         self.add_op('nonlocal')
@@ -288,42 +381,67 @@ class ASTObject(baseASTObject):
 
     def visit_Delete(self, node: ast.Delete):
         self.add_op('del')
+        for t in node.targets:
+            self.visit(t)
 
     # Pattern matching (Python 3.10+)
     def visit_Match(self, node: ast.Match):
         self.add_op('match')
+        self.visit(node.subject)
+        for c in node.cases:
+            self.visit(c)
 
     def visit_match_case(self, node: ast.match_case):
         self.add_op('case')
+        self.visit(node.pattern)
+        if node.guard:
+            self.visit(node.guard)
+        self._visit_body_skipping_docstring(node.body)
 
     def visit_MatchAs(self, node: ast.MatchAs):
         if node.name:
             self.add_operand(node.name)
+        if node.pattern:
+            self.visit(node.pattern)
 
     def visit_comprehension(self, node: ast.comprehension):
         if node.is_async:
             self.add_op('async')
         self.add_op('for')
-        for _if in node.ifs:
+        self.visit(node.target)
+        self.visit(node.iter)
+        for if_ in node.ifs:
             self.add_op('if')
+            self.visit(if_)
 
     def visit_ListComp(self, node: ast.ListComp):
-        self.add_op('ast.listComp')
+        self.visit(node.elt)
+        for gen in node.generators:
+            self.visit(gen)
 
     def visit_SetComp(self, node: ast.SetComp):
-        self.add_op('ast.setComp')
+        self.visit(node.elt)
+        for gen in node.generators:
+            self.visit(gen)
 
     def visit_DictComp(self, node: ast.DictComp):
-        self.add_op('ast.dictComp')
+        self.visit(node.key)
+        self.visit(node.value)
+        for gen in node.generators:
+            self.visit(gen)
 
     def visit_GeneratorExp(self, node: ast.GeneratorExp):
-        self.add_op('ast.genExp')
+        self.visit(node.elt)
+        for gen in node.generators:
+            self.visit(gen)
 
+    # Module/Root
     def visit_Module(self, node: ast.Module):
-        self.add_op('ast.module')
-
+        self._visit_body_skipping_docstring(node.body)
 
 if __name__ == '__main__':
     path = Path('core1.py')
     root = ASTObject.init(path)
-    print(root.halstead)
+
+    halstead = HalsteadVisitor(root.reflection, exclude_docstrings=True, )
+    print(halstead.halstead)
