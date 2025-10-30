@@ -86,6 +86,7 @@ class ASTObject(baseASTObject):
             self.add_operand(node.arg)
         # also visit annotation to capture identifiers/constants used in types
         if node.annotation:
+            self.add_op('hint')
             # loop by list of annotations
             self.visit(node.annotation)
 
@@ -95,11 +96,15 @@ class ASTObject(baseASTObject):
             for _decorator in node.decorator_list:
                  self.add_op('@')
 
+    def visit_returns(self, node):
+        if hasattr(node, 'returns') and node.returns:
+            self.add_op('->')
+            # self.visit(node.returns)
 
     def visit_FunctionDef(self, node: ast.FunctionDef):
         self.add_op('def')
         self.visit_decorators(node)
-        # parameters
+        self.visit_returns(node)
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef):
         self.add_op('async')
@@ -109,6 +114,7 @@ class ASTObject(baseASTObject):
         self.add_op('class')
         self.add_operand(node.name)
         self.visit_decorators(node)
+        self.visit_returns(node)
 
 
     def visit_Lambda(self, node: ast.Lambda):

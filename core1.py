@@ -1,7 +1,7 @@
 
 class TestClass:
 
-    def visit(self, node):
+    def visit(self, node: str, point:bool = True) -> bool:
         """Visit a node."""
         method = 'visit_' + node.__class__.__name__
         if hasattr(self, method):
