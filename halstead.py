@@ -40,9 +40,11 @@ class ASTObject(baseASTObject):
             #     if operator in transformer:
             #         self.operators_counter[transformer[operator]] = self.operators_counter.pop(operator)
 
-            for halstead in [children.halstead for children in self.children]:
-                self.operands.update(halstead['operands'])
-                self.operators.update(halstead['operators'])
+            if not self.is_docstring:
+                self.visit(self.reflection)
+                for halstead in [children.halstead for children in self.children]:
+                    self.operands.update(halstead['operands'])
+                    self.operators.update(halstead['operators'])
 
 
             halstead = self._halstead = { 'operands': self.operands, 'operators': self.operators, 'n1': len(self.operators), 'n2': len(self.operands), 'N1': sum(self.operators.values()), 'N2': sum(self.operands.values())}
@@ -59,13 +61,9 @@ class ASTObject(baseASTObject):
         """Visit a node."""
         method = 'visit_' + node.__class__.__name__
         if hasattr(self, method):
-            return getattr(self, method)(node)
+            getattr(self, method)(node)
+        return self
 
-    def collect(self, node):
-        collected = super().collect(node)
-        if not collected.is_docstring:
-            self.visit(node)
-        return collected
     # helpers
     def add_op(self, *args):
         self.operators.update(args)
@@ -327,10 +325,12 @@ class ASTObject(baseASTObject):
         self.add_op('ast.genExp')
 
     def visit_Module(self, node: ast.Module):
-        self.add_op('ast.module')
+        # skip mark "self.add_op('ast.module')" because we count into the module, not the module itself
+        ...
 
 
 if __name__ == '__main__':
     path = Path('core1.py')
     root = ASTObject.init(path)
+    print('Halstead for:', root.path)
     print(root.halstead)

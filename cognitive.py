@@ -1,7 +1,7 @@
 from collections import Counter
 from dataclasses import dataclass, field
 import ast
-from halstead import ASTObject as baseASTObject
+from stats import ASTObject as baseASTObject
 from pathlib import Path
 
 import sys
@@ -63,11 +63,21 @@ class ASTObject(baseASTObject):
     @property
     def cognitive_complexity(self):
         if self._func_complexities is None:
-            self.visit(self.reflection)
+            if not self.is_docstring:
+                self.visit(self.reflection)
+                for child in self.children:
+                    self.func_complexities.update(child.CgC or {})
             self._func_complexities = self.func_complexities
         return self._func_complexities
         # return self.local_cg_complexity + sum(child.cognitive_complexity for child in self.children)
     CgC = cognitive_complexity
+
+    def visit(self, node):
+        """Visit a node."""
+        method = 'visit_' + node.__class__.__name__
+        if hasattr(self, method):
+            getattr(self, method)(node)
+        return self
 
     def _enter_function(self, name, node):
         self._func_stack.append(name)
@@ -96,21 +106,21 @@ class ASTObject(baseASTObject):
     # --------------- AST visitors ----------------
 
     def _qualify_name(self, name):
-        if not self._func_stack:
-            return name
-        return ".".join(self._func_stack + [name])
+        if self._func_stack:
+            return ".".join(self._func_stack + [name])
+        return name
 
     def visit_FunctionDef(self, node):
         name = self._qualify_name(node.name)
         self.func_nodes[name] = node
         prev = self._enter_function(name, node)
         # Visit defaults, decorators, body
-        for d in node.args.defaults:
-            self.visit(d)
-        for d in node.decorator_list:
-            self.visit(d)
-        for stmt in node.body:
-            self.visit(stmt)
+        for arg in node.args.defaults:
+            self.visit(arg)
+        for decorator in node.decorator_list:
+            self.visit(decorator)
+        for statement in node.body:
+            self.visit(statement)
         self._exit_function(prev)
 
     def visit_Lambda(self, node):
@@ -131,37 +141,38 @@ class ASTObject(baseASTObject):
         self._nesting -= 1
 
         # Handle orelse: elif chains or else branch are hybrid increments and increase nesting for their bodies
-        orelse = node.orelse
-        if orelse:
-            current = orelse
-            while current:
-                if len(current) == 1 and isinstance(current[0], ast.If):
-                    # 'elif' as If in orelse: hybrid increment (+1), body gets nesting+1
-                    self._hybrid_incr(1)
-                    self._nesting += 1
-                    for stmt in current[0].body:
-                        self.visit(stmt)
-                    self._nesting -= 1
-                    current = current[0].orelse
-                else:
-                    # else branch (not an 'elif')
-                    self._hybrid_incr(1)
-                    self._nesting += 1
-                    for stmt in current:
-                        self.visit(stmt)
-                    self._nesting -= 1
-                    break
+        current = node.orelse
+        while current:
+            if len(current) == 1 and isinstance(current[0], ast.If):
+                # 'elif' as If in orelse: hybrid increment (+1), body gets nesting+1
+                self._hybrid_incr(1)
+                self._nesting += 1
+                for stmt in current[0].body:
+                    self.visit(stmt)
+                self._nesting -= 1
+                current = current[0].orelse
+            else:
+                # else branch (not an 'elif')
+                self._hybrid_incr(1)
+                self._nesting += 1
+                for stmt in current:
+                    self.visit(stmt)
+                self._nesting -= 1
+                break
+
+    def visit_loop(self, node):
+        for stmt in node.body:
+            self.visit(stmt)
+        self._nesting -= 1
+        for stmt in node.orelse:
+            self.visit(stmt)
 
     def visit_For(self, node):
         self._struct_incr(1)
         self._nesting += 1
         self.visit(node.target)
         self.visit(node.iter)
-        for stmt in node.body:
-            self.visit(stmt)
-        self._nesting -= 1
-        for stmt in node.orelse:
-            self.visit(stmt)
+        self.visit_loop(node)
 
     def visit_AsyncFor(self, node):
         self.visit_For(node)
@@ -170,11 +181,7 @@ class ASTObject(baseASTObject):
         self._struct_incr(1)
         self._nesting += 1
         self.visit(node.test)
-        for stmt in node.body:
-            self.visit(stmt)
-        self._nesting -= 1
-        for stmt in node.orelse:
-            self.visit(stmt)
+        self.visit_loop(node)
 
     def visit_Try(self, node):
         # try itself ignored; each except handler is structural (+1) and its body is nested
@@ -199,6 +206,10 @@ class ASTObject(baseASTObject):
         for v in node.values:
             self.visit(v)
 
+    def visit_IfExp(self, node):
+        self._struct_incr(1)
+        self.generic_visit(node)
+
     def visit_Compare(self, node):
         self.generic_visit(node)
 
@@ -212,15 +223,19 @@ class ASTObject(baseASTObject):
             self.calls[self._current_func].add(callee)
         self.generic_visit(node)
 
+    def visit_Assign(self, node):
+        self.generic_visit(node)
     def visit_Return(self, node):
         # Sonar: early return doesn't add complexity. Still visit value.
         if node.value:
             self.visit(node.value)
 
     def visit_Break(self, node):
+        # should be counted as a labeled break, for reason that break is like goto behind else block.
         return
 
     def visit_Continue(self, node):
+        # should be counted as a labeled Continue, for reason that Continue is like goto on first previous For/while statement
         return
 
     def visit_Raise(self, node):
