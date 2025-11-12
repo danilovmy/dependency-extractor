@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 import ast
 from stats import ASTObject as baseASTObject
 from pathlib import Path
-
+import argparse
 import sys
 from collections import defaultdict
 
@@ -80,6 +80,8 @@ class ASTObject(baseASTObject):
         return self
 
     def _enter_function(self, name, node):
+        # if name == 'visit_Call':
+        #     ...
         self._func_stack.append(name)
         prev = (self._current_func, self._local_complexity, self._nesting)
         self._current_func = name
@@ -96,8 +98,7 @@ class ASTObject(baseASTObject):
 
     def _struct_incr(self, amount=1):
         """Structural increment: amount + nesting penalty"""
-        penalty = self._nesting
-        self._local_complexity += amount + penalty
+        return self._hybrid_incr(amount + self._nesting)
 
     def _hybrid_incr(self, amount=1):
         """Hybrid increment: increment without nesting penalty"""
@@ -107,7 +108,7 @@ class ASTObject(baseASTObject):
 
     def _qualify_name(self, name):
         if self._func_stack:
-            return ".".join(self._func_stack + [name])
+            return ".".join([*self._func_stack, name])
         return name
 
     def visit_FunctionDef(self, node):
@@ -135,30 +136,29 @@ class ASTObject(baseASTObject):
         # 'if' is structural: +1 + nesting penalty
         self._struct_incr(1)
         # Visit body with nesting increased
+        self.visit(node.test)
         self._nesting += 1
         for stmt in node.body:
             self.visit(stmt)
         self._nesting -= 1
 
         # Handle orelse: elif chains or else branch are hybrid increments and increase nesting for their bodies
-        current = node.orelse
-        while current:
-            if len(current) == 1 and isinstance(current[0], ast.If):
+        while hasattr(node, 'orelse') and node.orelse:
+            node, *body = node.orelse
+            self._hybrid_incr(1)
+            if isinstance(node, ast.If):
                 # 'elif' as If in orelse: hybrid increment (+1), body gets nesting+1
-                self._hybrid_incr(1)
+                self.visit(node.test)
                 self._nesting += 1
-                for stmt in current[0].body:
+                for stmt in node.body:
                     self.visit(stmt)
                 self._nesting -= 1
-                current = current[0].orelse
             else:
-                # else branch (not an 'elif')
-                self._hybrid_incr(1)
                 self._nesting += 1
-                for stmt in current:
+                for stmt in [node, *body]:
                     self.visit(stmt)
                 self._nesting -= 1
-                break
+                node = None # like break
 
     def visit_loop(self, node):
         for stmt in node.body:
@@ -176,6 +176,9 @@ class ASTObject(baseASTObject):
 
     def visit_AsyncFor(self, node):
         self.visit_For(node)
+
+    def visit_Expr(self, node):
+        self.generic_visit(node)
 
     def visit_While(self, node):
         self._struct_incr(1)
@@ -225,6 +228,10 @@ class ASTObject(baseASTObject):
 
     def visit_Assign(self, node):
         self.generic_visit(node)
+
+    def visit_Attribute(self, node):
+        self.generic_visit(node)
+
     def visit_Return(self, node):
         # Sonar: early return doesn't add complexity. Still visit value.
         if node.value:
@@ -335,7 +342,6 @@ def analyze_source(path = None):
 
 # CLI behavior
 def main(argv=None):
-    import argparse
     parser = argparse.ArgumentParser(prog='cognitive_complexity.py', description='Compute Cognitive Complexity (Sonar-like) for Python files.')
     parser.add_argument('paths', nargs='+', help='Python file(s) or directories to analyze.')
     parser.add_argument('--recursive', '-r', action='store_true', help='Recurse into directories.')
