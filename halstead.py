@@ -1,3 +1,4 @@
+"""a set of software metrics developed by Maurice Halstead to measure code complexity based on the number of operators and operands in the source code"""
 import math
 from collections import Counter
 from dataclasses import dataclass, field

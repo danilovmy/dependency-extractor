@@ -109,8 +109,12 @@ class ASTObject:
     @classmethod
     def init(cls, path):
         path = Path(path)
-        source = path.read_text(encoding='utf-8')
-        node = ast.parse(source, filename=str(path.absolute()))
+        try:
+            source = path.read_text(encoding='utf-8')
+            node = ast.parse(source, filename=str(path.absolute()))
+        except Exception as error:
+            print(f"Could not read or parse {path}: {error}", file=sys.stderr)
+            source, node = '', ast.parse('"""Error"""', filename=str(path.absolute()))
         return cls('root', node, path=path, source_lines=source.splitlines()).setup()
 
 if __name__ == '__main__':

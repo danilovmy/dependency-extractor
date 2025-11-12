@@ -4,7 +4,7 @@ import ast
 
 from .base import ASTObject as baseASTObject
 
-from halsted import HalsteadVisitor
+from halstead import HalsteadVisitor
 
 
 @dataclass

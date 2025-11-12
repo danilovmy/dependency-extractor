@@ -14,7 +14,13 @@ class ASTObject(baseASTObject):
                 copy_pasta.update([line])
         return copy_pasta.most_common()
 
+
+def main(path):
+    root = Path(path).parent
+    for source in root.glob('**/*.py'):
+        ASTObject.init(source).copy_paste
+
 if __name__ == '__main__':
     path = Path('core1.py')
-    root = ASTObject.init(path)
-    print(root.copy_paste)
+    main(path)
+    print(copy_pasta.most_common()[:10])
