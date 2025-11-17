@@ -2,9 +2,10 @@ from collections import Counter
 from dataclasses import dataclass, field
 import ast
 from stats import ASTObject as baseASTObject
+from base import main
+
 from pathlib import Path
-import argparse
-import sys
+
 from collections import defaultdict
 
 @dataclass
@@ -108,7 +109,7 @@ class ASTObject(baseASTObject):
 
     def _qualify_name(self, name):
         if self._func_stack:
-            return ".".join([*self._func_stack, name])
+            return ".".join((*self._func_stack, name))
         return name
 
     def visit_FunctionDef(self, node):
@@ -334,34 +335,23 @@ class ASTObject(baseASTObject):
                     self.func_complexities[v] = self.func_complexities.get(v, 0) + 1
 
 
-def analyze_source(path = None):
-    result = ASTObject.init(path or 'core1.py').CgC
+def analyze_source(obj):
+    result = obj.CgC
+    # render will be added later, after adding arg for output folder
+    # Path(obj.path.parent / f'{obj.path.stem}.html').write_text(obj.render(ready=True))
     total = sum(result.values())
     return result, total
 
 
 # CLI behavior
-def main(argv=None):
-    parser = argparse.ArgumentParser(prog='cognitive_complexity.py', description='Compute Cognitive Complexity (Sonar-like) for Python files.')
-    parser.add_argument('paths', nargs='+', help='Python file(s) or directories to analyze.')
-    parser.add_argument('--recursive', '-r', action='store_true', help='Recurse into directories.')
-    args = parser.parse_args(argv)
-
-    files = []
-    for p in args.paths:
-        p = Path(p)
-        if p.is_file() and p.suffix == '.py':
-            files.append(p)
-        elif p.is_dir() and args.recursive:
-            files.extend(p.rglob('*.py'))
-        elif p.is_dir():
-            files.extend(p.glob('**/*.py'))
+if __name__ == '__main__':
+    objects = main(ASTObject)
 
     grand_total = 0
     per_file = {}
-    for f in files:
-        func_map, total = analyze_source(f)
-        per_file[str(f)] = {'total': total, 'functions': func_map}
+    for obj in objects:
+        func_map, total = analyze_source(obj)
+        per_file[str(obj.path)] = {'total': total, 'functions': func_map}
         grand_total += total
 
     for fname, data in per_file.items():
@@ -369,10 +359,3 @@ def main(argv=None):
         for func, c in data['functions'].items():
             print(f'  {func}: {c}')
     print(f'Grand total: {grand_total}')
-
-if __name__ == '__main__':
-    args = sys.argv
-    if len(args) < 2:
-        print(f"Usage: {sys.argv[0]} <python_file.py>")
-        args = [__file__]
-    main(args)

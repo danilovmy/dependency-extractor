@@ -2,6 +2,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 import ast
 
+import argparse
+import sys
+
 @dataclass
 class ASTObject:
     """ Base wrapper for AST Node for complexity measurements"""
@@ -117,9 +120,48 @@ class ASTObject:
             source, node = '', ast.parse('"""Error"""', filename=str(path.absolute()))
         return cls('root', node, path=path, source_lines=source.splitlines()).setup()
 
+    def render(self, ready=False):
+        try:
+            render = '\n'.join([child.render() for child in self.children])
+            response = f'<details style="padding-left:3em;"><summary>{getattr(self.reflection, "name", getattr(self.reflection,"id", self.reflection.__class__.__name__))}</summary>{self.name}<br>{render}</details>'
+            return f'<html><body>{response}</body></html>' if ready else response
+        except:
+            ...
+
+def main(cls=ASTObject, args=None):
+    args = args or sys.argv
+    if len(args) < 2:
+        print(f"Usage: {sys.argv[0]} <python_file.py>")
+        try:
+            args = [sys.modules[cls.__module__].__file__]
+        except:
+            args = [__file__]
+    else:
+        args = args[1:]
+
+
+    parser = argparse.ArgumentParser(prog='cognitive_complexity.py', description='Compute Cognitive Complexity (Sonar-like) for Python files.')
+    parser.add_argument('paths', nargs='+', help='Python file(s) or directories to analyze.')
+    parser.add_argument('--recursive', '-r', action='store_true', help='Recurse into directories.')
+    args = parser.parse_args(args)
+
+    objects = []
+    for path in args.paths:
+        path = Path(path)
+        if path.is_file():
+            if path.suffix == '.py':
+                objects.append(cls.init(path))
+            else:
+                print(f"Skipping non-Python file: {path}")  # other files like stubs not implemented yet
+        elif path.is_dir():
+            template = '**/*.py' if args.recursive else '*.py'
+            for path in path.glob(template):
+                objects.append(cls.init(path))
+
+    return objects
+
 if __name__ == '__main__':
-    path = Path(__file__)
-    root = ASTObject.init(path)
+    root, *__ = main()
     print('LOC', root.LOC)
     print('blank lines', root.spaces)
     print('comments', root.comments)

@@ -1,8 +1,9 @@
+from collections import Counter
 from dataclasses import dataclass, field
-from pathlib import Path
+
 import ast
 
-from base import ASTObject as baseASTObject
+from base import ASTObject as baseASTObject, main
 counter = []
 
 @dataclass
@@ -17,7 +18,8 @@ class ASTObject(baseASTObject):
     _attributes: dict = None  # declared attributes
     _constants: dict = None  # declared constants
     _properties: dict = None # declared properties
-    _imports: dict = field(default_factory=list)  # imported
+    _imports: list = field(default_factory=list)  # import statements
+    _imported: list = field(default_factory=list)  # imported objects
     _classes: list = field(default_factory=list)
     _functions: list = field(default_factory=list)
 
@@ -48,7 +50,7 @@ class ASTObject(baseASTObject):
     @property
     def imports(self):
         """ return all imports """
-        return *self._imports, *(child.imports for child in self.children)
+        return *self._imports, *[child.imports for child in self.children if child.imports]
 
     def collect_modules(self, node):
         if isinstance(node, (ast.Module)):
@@ -64,6 +66,13 @@ class ASTObject(baseASTObject):
     @property
     def is_import(self):
         return isinstance(self.reflection, (ast.Import, ast.ImportFrom))
+
+    @property
+    def imported(self):
+        if not self._imported:
+            for node in self.imports:
+                self._imported += [name.name for name in node.reflection.names]
+        return self._imported
 
     def collect_imports(self, node):
         if node.is_import:
@@ -150,19 +159,32 @@ class ASTObject(baseASTObject):
                     return True
 
 if __name__ == '__main__':
-    path = Path(__file__)
-    root = ASTObject.init(path)
+    objects= main(ASTObject)
 
-    if root.classes:
-        cls =root.classes[0]
-        if cls.children:
-            child = cls.children[1]
-            print(child.is_docstring)
-            print(child.raw_lines)
+    imported = Counter()
+    imports = Counter()
+    imported_objects = Counter()
+    for obj in objects:
+        imports.update({str(obj.path): len(obj.imports)})
 
-    print('collected', counter)
-    counter = []
-    for child in ast.walk(root.reflection):
-        counter += [child]
+        imported_objects.update({str(obj.path): len(obj.imported)})
+        imported.update(obj.imported)
 
-    print('walked', counter)
+    print('max import lines:', imports.most_common(5))
+    print('max imported objects:', imported_objects.most_common(5))
+    print('mostly imported:', imported.most_common(5))
+
+    # if root.classes:
+    #     cls =root.classes[0]
+    #     if cls.children:
+    #         child = cls.children[1]
+    #         print(child.is_docstring)
+    #         print(child.raw_lines)
+    #         print(ast.unparse(child.reflection))
+
+    # print('collected', counter)
+    # counter = []
+    # for child in ast.walk(root.reflection):
+    #     counter += [child]
+
+    # print('walked', counter)
