@@ -14,3 +14,12 @@ https://www.youtube.com/watch?v=x5V2nvxco90
 https://www.youtube.com/watch?v=el9OKGrqU6o
 https://www.sonarsource.com/docs/CognitiveComplexity.pdf
 https://wemake-python-styleguide.readthedocs.io/en/1.0.0/pages/usage/violations/complexity.html
+
+Code churn.
+https://swimm.io/learn/developer-experience/how-to-measure-code-churn-why-it-matters-and-4-ways-to-reduce-it
+
+code quality discussion
+https://github.com/astral-sh/ruff/discussions/20699
+
+https://medium.com/@stevekowalski_47184/software-complexity-is-it-worth-measuring-98fba5244261
+https://speakerdeck.com/matthiasmullie/software-metrics?slide=17

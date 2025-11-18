@@ -3,7 +3,7 @@ import math
 from collections import Counter
 from dataclasses import dataclass, field
 import ast
-from stats import ASTObject as baseASTObject
+from stats import ASTObject as baseASTObject, main
 from pathlib import Path
 
 transformer = {
@@ -52,7 +52,7 @@ class ASTObject(baseASTObject):
             n1, n2, N1, N2 = halstead['n1'], halstead['n2'], halstead['N1'], halstead['N2']
             n, N = n1 + n2, N1 + N2
             volume = N * math.log2(n or 1)
-            difficulty = n and ((n1 / 2.0) * (N2 / n2)) or 0
+            difficulty = n1 and n2 and ((n1 / 2.0) * (N2 / n2)) or 0
             effort = difficulty * volume
             halstead.update(vocabulary = n, length = N, volume = volume, difficulty = difficulty, effort = effort)
         return self._halstead
@@ -330,7 +330,15 @@ class ASTObject(baseASTObject):
 
 
 if __name__ == '__main__':
-    path = Path('core1.py')
-    root = ASTObject.init(path)
-    print('Halstead for:', root.path)
-    print(root.halstead)
+    objects= main(ASTObject)
+    vocabulary = Counter()
+    difficulty = Counter()
+    for obj in objects:
+        halstead = obj.halstead
+        vocabulary.update({str(obj.path): halstead['vocabulary']})
+        difficulty.update({str(obj.path): int(halstead['difficulty'])})
+
+    most_common = 1
+    print('objects researched:', len(objects))
+    print('variative files:', vocabulary.most_common(most_common))
+    print('hardest to maintain:', difficulty.most_common(most_common))

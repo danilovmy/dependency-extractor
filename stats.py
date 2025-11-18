@@ -23,6 +23,12 @@ class ASTObject(baseASTObject):
     _classes: list = field(default_factory=list)
     _functions: list = field(default_factory=list)
 
+    def __repr__(self):
+        return f'{self.name} -> {self.reflection.__class__}'
+
+    def __str__(self):
+        return f'{self.name} -> {self.reflection.__class__}'
+
     @property
     def have_internals(self):
         """ if declared functions or classes internal """
@@ -50,7 +56,8 @@ class ASTObject(baseASTObject):
     @property
     def imports(self):
         """ return all imports """
-        return *self._imports, *[child.imports for child in self.children if child.imports]
+        imports_pipe = (child.imports for child in self.children if child.imports)
+        return *self._imports, *(child_import for imports in imports_pipe for child_import in imports)
 
     def collect_modules(self, node):
         if isinstance(node, (ast.Module)):
@@ -71,7 +78,10 @@ class ASTObject(baseASTObject):
     def imported(self):
         if not self._imported:
             for node in self.imports:
-                self._imported += [name.name for name in node.reflection.names]
+                try :
+                    self._imported += [name.name for name in node.reflection.names]
+                except AttributeError:
+                    breakpoint()
         return self._imported
 
     def collect_imports(self, node):
@@ -163,16 +173,29 @@ if __name__ == '__main__':
 
     imported = Counter()
     imports = Counter()
+    classes = Counter()
+    functions = Counter()
     imported_objects = Counter()
     for obj in objects:
         imports.update({str(obj.path): len(obj.imports)})
-
         imported_objects.update({str(obj.path): len(obj.imported)})
         imported.update(obj.imported)
+        for _class in obj.classes:
+            classes.update({f'{obj.path}.{_class.reflection.name}': len(_class.methods)})
+        for function in obj.functions:
+            functions.update({f'{obj.path}.{function.reflection.name}': len(function.functions)})
 
-    print('max import lines:', imports.most_common(5))
-    print('max imported objects:', imported_objects.most_common(5))
-    print('mostly imported:', imported.most_common(5))
+    most_common = 1
+    print('objects researched:', len(objects))
+    print('max import lines:', imports.most_common(most_common))
+    print('max imported objects:', imported_objects.most_common(most_common))
+    print('mostly imported:', imported.most_common(most_common))
+
+    print('classes:', len(classes))
+    print('functions', len(functions))
+    print('max methods:', classes.most_common(most_common))
+    print('max function compositions:', functions.most_common(most_common))
+
 
     # if root.classes:
     #     cls =root.classes[0]

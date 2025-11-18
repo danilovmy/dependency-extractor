@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from pathlib import Path
 import ast
+from collections import Counter
 
 import argparse
 import sys
@@ -14,6 +15,12 @@ class ASTObject:
     path: Path = None  # where placed
     source_lines: list[str] = None # source file line per line content
     children: list = field(default_factory=list)
+
+    def __repr__(self):
+        return f'{self.name} -> {self.reflection.__class__}'
+
+    def __str__(self):
+        return f'{self.name} -> {self.reflection.__class__}'
 
     @property
     def docstring(self):
@@ -161,10 +168,20 @@ def main(cls=ASTObject, args=None):
     return objects
 
 if __name__ == '__main__':
-    root, *__ = main()
-    print('LOC', root.LOC)
-    print('blank lines', root.spaces)
-    print('comments', root.comments)
-    print('SLOC', root.SLOC)
-    print('LLOC', root.LLOC)
-    print(root.docstring)
+    objects= main(ASTObject)
+
+    LOCs = Counter()
+    Compression = Counter()
+    for obj in objects:
+        print('LOC', obj.LOC)
+        print('blank lines', obj.spaces)
+        print('comments', obj.comments)
+        print('SLOC', obj.SLOC)
+        print('LLOC', obj.LLOC)
+        print('docsring', obj.docstring)
+
+        LOCs.update({str(obj.path): obj.LOC})
+        Compression.update({str(obj.path): int(obj.LOC/(obj.LLOC or 1))})
+
+    print('longest', LOCs.most_common(1))
+    print('max compression', Compression.most_common(1))
